@@ -2,7 +2,7 @@
 
 FROM --platform=linux/amd64 ubuntu:16.04
 
-MAINTAINER Julia Kodysh <julia326@gmail.com>
+LABEL maintainer="Julia Kodysh <julia326@gmail.com>"
 
 RUN echo 'debconf debconf/frontend select Noninteractive' | debconf-set-selections && \
     apt-get clean && \
