@@ -64,19 +64,31 @@ RUN cd /tmp && wget https://github.com/openvax/neoantigen-vaccine-pipeline/relea
 
 ENV PERL5LIB /usr/local/lib
 
-# Install Strelka
-# Original address for Strelka: ftp://strelka:%27%27@ftp.illumina.com/v1-branch/v1.0.14/strelka_workflow-1.0.14.tar.gz
+# Install Strelka2
 RUN mkdir $HOME/strelka && \
-    cd /tmp && wget https://github.com/openvax/neoantigen-vaccine-pipeline/releases/download/0.3.0/strelka_workflow-1.0.14.tar.gz && \
-    tar xvfz strelka_workflow-1.0.14.tar.gz && \
-    cd strelka_workflow-1.0.14 && \
-    ./configure prefix=$HOME/strelka && \
+    cd /tmp && wget https://github.com/Illumina/strelka/releases/download/v2.9.10/strelka-2.9.10.release_src.tar.bz2 && \
+    tar xvjf strelka-2.9.10.release_src.tar.bz2  && \
+    mkdir build && cd build  && \
+    /tmp/strelka-2.9.10.release_src/configure --prefix=$HOME/strelka && \
     make && \
     chmod -R a+rx ./* && \
     make install && \
     rm -rf /tmp/*
 
 ENV STRELKA_BIN $HOME/strelka/bin
+
+# Install Manta
+RUN mkdir $HOME/manta && \
+    cd /tmp && wget https://github.com/Illumina/manta/releases/download/v1.6.0/manta-1.6.0.release_src.tar.bz2 && \
+    tar xvjf manta-1.6.0.release_src.tar.bz2  && \
+    mkdir build && cd build  && \
+    /tmp/manta-1.6.0.release_src/configure --prefix=$HOME/manta && \
+    make && \
+    chmod -R a+rx ./* && \
+    make install && \
+    rm -rf /tmp/*
+
+ENV MANTA_BIN $HOME/manta/bin
 
 # Install Miniconda
 RUN wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \

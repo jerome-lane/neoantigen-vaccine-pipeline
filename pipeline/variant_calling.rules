@@ -100,40 +100,96 @@ rule mutect2:
   shell:
     "vcf-concat {input} > {output}"
 
-# If not running in a Docker image, user must have these environment variables set:
-# - STRELKA_BIN: directory of Strelka installation, must contain configureStrelkaWorkflow.pl
-# - STRELKA_CONFIG: path to Strelka config file
-rule strelka:
+rule manta:
   input:
     normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
     tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
+  params:
+    reference = config["reference"]["genome"]
+    output_dir = join(WORKDIR, "manta_output"),
   output:
-    expand(join(WORKDIR, "strelka_output/results/passed.somatic.{type}.vcf"),
-      type=['snvs', 'indels'])
+    diploid_sv_vcf = join(params.output_dir, "results/variants/diploidSV.vcf.gz"),
+    diploid_sv_idx = join(params.output_dir, "results/variants/diploidSV.vcf.gz.tbi"),
+    somatic_sv_vcf = join(params.output_dir, "results/variants/somaticSV.vcf.gz"),
+    somatic_sv_idx = join(params.output_dir, "results/variants/somaticSV.vcf.gz.tbi"),
+    cand_indel_vcf = join(params.output_dir, "results/variants/candidatcandidateSmallIndels.vcf.gz"),
+    cand_indel_idx = join(params.output_dir, "results/variants/candidateSmallIndels.vcf.gz.tbi"),
+    cand_sv_vcf = join(params.output_dir, "results/variants/candidateSV.vcf.gz"),
+    cand_sv_idx = join(params.output_dir, "results/variants/candidateSV.vcf.gz.tbi"),
+  log:
+    join(LOGDIR, "manta.log"),
+  threads: _get_all_cores
+  resources:
+      mem_mb=4096,
+  shell:
+    "rm -rf {params.output_dir}; "
+    "${MANTA_BIN}/configManta.py "
+    "--normalBam {input.normal} "
+    "--tumorBam {input.tumor} "
+    "--referenceFasta {params.reference} "
+    "--exome "
+    "--runDir {params.output_dir} &> {log}; "
+    "{params.output_dir}/runWorkflow.py --memGb {mem_gb} -j {threads} "
+    ">> {log} 2>&1"
+
+MUTATION_TYPES=['snvs', 'indels']
+
+# If not running in a Docker image, user must have these environment variables set:
+# - STRELKA_BIN: directory of Strelka installation, must contain configureStrelkaWorkflow.pl
+# - STRELKA_CONFIG: path to Strelka config file
+rule strelka2:
+  input:
+    indel_candidates = join(WORKDIR, "manta_output/results/variants/candidate_small_indels.vcf.gz"),
+    normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
+    tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
+  output:
+    expand(join(WORKDIR, "strelka_output/results/variants/somatic.{type}.vcf.gz"),
+      type=MUTATION_TYPES)
   params:
     output_dir = join(WORKDIR, "strelka_output"),
     reference = config["reference"]["genome"]
   benchmark:
-    join(BENCHMARKDIR, "strelka.txt")
+    join(BENCHMARKDIR, "strelka2.txt")
   log:
-    join(LOGDIR, "strelka.log")
+    join(LOGDIR, "strelka2.log")
   threads: _get_all_cores
   shell:
     "rm -rf {params.output_dir}; "
-    "$STRELKA_BIN/configureStrelkaWorkflow.pl "
-    "--normal {input.normal} "
-    "--tumor {input.tumor} "
-    "--ref {params.reference} "
+    "$STRELKA_BIN/configureStrelkaSomaticWorkflow.py "
+    "--normalBam {input.normal} "
+    "--tumorBam {input.tumor} "
+    "--referenceFasta {params.reference} "
     "--config $STRELKA_CONFIG "
-    "--output-dir {params.output_dir} &> {log}; "
-    "cd {params.output_dir}; "
-    "make -j {threads} "
+    "--indelCandidates {input.indel_candidates} "
+    "--exome "
+    "--runDir {params.output_dir} &> {log}; "
+    "{params.output_dir}/runWorkflow.py -m local -j {threads} "
+    ">> {log} 2>&1"
+
+rule strelka_filter:
+  input:
+    join(WORKDIR, "strelka_output/results/variants/somatic.{type}.vcf.gz")
+  params:
+    reference = config["reference"]["genome"]
+  benchmark:
+    join(BENCHMARKDIR, "select_passed_{type}.txt")
+  log:
+    join(LOGDIR, "select_passed_{type}.log")
+  output:
+    join(WORKDIR, "strelka_output/results/variants/passed.somatic.{type}.vcf")
+  shell:
+    "gatk "
+    "-T SelectVariants "
+    "-R {params.reference} "
+    "-V {input} "
+    "-o {output} "
+    "--excludeFiltered "
     ">> {log} 2>&1"
 
 rule strelka_combine:
   input:
-    snvs = join(WORKDIR, "strelka_output/results/passed.somatic.snvs.vcf"),
-    indels = join(WORKDIR, "strelka_output/results/passed.somatic.indels.vcf")
+    snvs = join(WORKDIR, "strelka_output/results/variants/passed.somatic.snvs.vcf"),
+    indels = join(WORKDIR, "strelka_output/results/variants/passed.somatic.indels.vcf")
   output:
     join(WORKDIR, "strelka.vcf")
   params:

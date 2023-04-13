@@ -1,4 +1,4 @@
-[user]
+[StrelkaSomatic]
 isSkipDepthFilters = 1
 maxInputDepth = 10000
 depthFilterMultiple = 3.0
@@ -7,15 +7,19 @@ snvMaxSpanningDeletionFrac = 0.75
 indelMaxRefRepeat = 8
 indelMaxWindowFilteredBasecallFrac = 0.3
 indelMaxIntHpolLength = 14
-ssnvPrior = 0.000001
+ssnvPrior = 0.0001
 sindelPrior = 0.000001
-ssnvNoise = 0.0000005
+ssnvNoise = 0.0000000005
+sindelNoiseFactor = 2.2
 sindelNoise = 0.0000001
-ssnvNoiseStrandBiasFrac = 0.5
+ssnvNoiseStrandBiasFrac = 0.0
 minTier1Mapq = 40
 minTier2Mapq = 5
 ssnvQuality_LowerBound = 15
-sindelQuality_LowerBound = 30
+sindelQuality_LowerBound = 40
 isWriteRealignedBam = 0
 binSize = 25000000
 extraStrelkaArguments = --eland-compatibility
+ssnvContamTolerance = 0.05
+indelContamTolerance = 0.05
+isWriteRealignedBam = 0
