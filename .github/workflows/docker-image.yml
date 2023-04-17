@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE_NAME: neoantigen-discovery-pipeline
-      IMAGE_VERSION: $(date +%s)
+      IMAGE_VERSION: "$(date +%s)"
 
     steps:
     - uses: actions/checkout@v3
