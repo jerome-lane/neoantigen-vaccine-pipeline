@@ -21,13 +21,13 @@ jobs:
         DOCKER_PASSWORD: ${{secrets.DOCKER_PASSWORD}}
         IMAGE_NAME: neoantigen-discovery-pipeline
         IMAGE_VERSION: $(date +%s)
-      run: docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
-      
-    - name: Build the Docker image
-      run: 
-        docker build . --file docker/Dockerfile --tag ${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION
+      run: |
+        docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
         echo "${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION"
       
+    - name: Build the Docker image
+      run: docker build . --file docker/Dockerfile --tag ${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION
+       
     - name: Docker Push
       run: docker push ${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION
       
