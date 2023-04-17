@@ -25,5 +25,5 @@ jobs:
       run: docker build . --file docker/Dockerfile --tag neoantigen-discovery-pipeline:$(date +%s)
       
     - name: Docker Push
-      run: docker push ${{secrets.DOCKER_USER}}/neoantigen-dicovery-pipeline:date +%s)
+      run: docker push ${{secrets.DOCKER_USER}}/neoantigen-dicovery-pipeline:$(date +%s)
       
