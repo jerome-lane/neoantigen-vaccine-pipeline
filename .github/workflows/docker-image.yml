@@ -25,10 +25,10 @@ jobs:
       run: |
         docker login -u $DOCKER_USER -p $DOCKER_PASSWORD
         echo "${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION"
-      
+    
     - name: Build the Docker image
-      run: docker build . --file docker/Dockerfile --tag ${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION
+      run: docker build . --file docker/Dockerfile --tag ${{secrets.DOCKER_USER}}/$IMAGE_NAME-${GITHUB_REF#refs/heads/}:$IMAGE_VERSION
        
     - name: Docker Push
-      run: docker push ${{secrets.DOCKER_USER}}/$IMAGE_NAME:$IMAGE_VERSION
+      run: docker push ${{secrets.DOCKER_USER}}/$IMAGE_NAME-${GITHUB_REF#refs/heads/}:$IMAGE_VERSION
       
