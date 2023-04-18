@@ -1,0 +1,35 @@
+input:
+  id: HCC_1395
+  #from https://www.cellosaurus.org/CVCL_1249
+  mhc_alleles:
+    - HLA-A*29:02
+    - HLA-B*08:01
+    - HLA-B*45:01
+    - HLA-C*06:02
+    - HLA-C*07:01
+  # The input FASTQ files must live in the same directory as your config YAML file.
+  # You should only need to modify the basename of the sample file paths, leaving the /inputs part
+  # of the filename unchanged.
+  normal:
+    - fragment_id: L001
+      type: paired-end
+      r1: /inputs/SRR7890847_1.fastq
+      r2: /inputs/SRR7890847_2.fastq
+  tumor:
+    - fragment_id: L001
+      type: paired-end
+      r1: /inputs/SRR7890852_1.fastq
+      r2: /inputs/SRR7890852_2.fastq
+# In most cases, you should not need to modify anything below this line.
+workdir:
+  /outputs
+reference:
+  genome: /reference-genome/grch38/GRCh38.d1.vd1.fa
+  dbsnp: /reference-genome/grch38/Homo_sapiens_assembly38.dbsnp138.vcf
+  cosmic: /reference-genome/grch38/CosmicCodingMuts.grch38.vcf
+  transcripts: /reference-genome/grch38/gencode.v22.annotation.gtf
+  capture_kit_coverage_file: /reference-genome/grch38/S31285117_Covered_grch38.bed
+parallel_indel_realigner: true
+variant_callers:
+  - mutect
+  - strelka

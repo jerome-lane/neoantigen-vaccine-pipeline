@@ -8,8 +8,13 @@ import allel
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
+import argparse
 
-benchmark_config = {
+import logging
+
+SRA_TOOL_KIT_URL = 'https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.0.2/sratoolkit.3.0.2-ubuntu64.tar.gz'
+
+BENCHMARKING_CONFIG = {
     'workdir': '/data/benchmarking',
     'sample_info': {
         'input': {
@@ -47,33 +52,56 @@ benchmark_config = {
     'final_output_dir': 'final_output',
 }
 
-sample_info = benchmark_config['sample_info']
-url = sample_info['SEQC2']['reference']['url']
-files = sample_info['SEQC2']['reference']['files']
+def run(args):
+    sample_info = BENCHMARKING_CONFIG['sample_info']
+    url = sample_info['SEQC2']['reference']['url']
+    files = sample_info['SEQC2']['reference']['files']
 
-WORKDIR = benchmark_config['workdir']
-output_directory = os.path.join(
-    WORKDIR, benchmark_config['SEQC2_reference_variant_calls_dir'])
-os.mkdir(output_directory, exist_ok=True)
-for file in files:
-    file_url = url + file
-    filename = wget.download(file_url, out=output_directory)
+    if args.download:
+        WORKDIR = BENCHMARKING_CONFIG['workdir']
+        output_directory = os.path.join(
+            WORKDIR, BENCHMARKING_CONFIG['SEQC2_reference_variant_calls_dir'])
+        os.makedirs(output_directory, exist_ok=True)
+        for file in files:
+            file_url = os.path.join(url, file)
+            destination = os.path.join(output_directory, file)
+            if os.path.exists(destination):
+                logging.debug('File %s already exists' % destination)
+            else:
+                logging.debug('Download %s to %s' % (file_url, destination))
+                filename = wget.download(file_url, out=destination)
+        
+        
+        basename = os.path.basename(SRA_TOOL_KIT_URL)
+        destination = os.path.join(WORKDIR, basename)
+        if os.path.exists(destination):
+                logging.debug('File %s already exists' % destination)
+        else:
+            logging.debug('Download %s' % (destination))
+            wget.download(SRA_TOOL_KIT_URL, out=destination)
 
-sra_tool_kit_url = 'https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/3.0.2/sratoolkit.3.0.2-ubuntu64.tar.gz'
-wget.download(sra_tool_kit_url, out=WORKDIR)
+            os.system(
+                f'tar -vxzf {WORKDIR}/sratoolkit.3.0.2-ubuntu64.tar.gz -C {WORKDIR} && export PATH=$PATH:{WORKDIR}/sratoolkit.3.0.2-ubuntu64/bin'
+            )
 
-os.system(
-    f'tar -vxzf sratoolkit.tar.gz && export PATH=$PATH:{WORKDIR}/sratoolkit.3.0.2-ubuntu64/bin && cd $PWD/sratoolkit.3.0.2-ubuntu64/bin && vdb-config -i'
-)
+        os.chdir(WORKDIR)
 
-os.chdir(WORKDIR)
+        for sample in sample_info['input']['samples']:
+            sample_id = sample['ID']
+            sample_folder = os.path.join(WORKDIR, sample_id)
+            if not os.path.exists(sample_folder):
+                os.system(
+                    f'{WORKDIR}/sratoolkit.3.0.2-ubuntu64/bin/prefetch {sample_id} --max-size 420000000000'
+                    )
+                os.system(
+                    f'{WORKDIR}/sratoolkit.3.0.2-ubuntu64/bin/fasterq-dump {sample_id}'
+                    )
+                os.system(
+                    f'gzip {sample_id}')
 
-for sample in sample_info['input']['samples']:
-    sample_id = sample['ID']
-    os.system(f'prefetch {sample_id} --max-size 420000000000')
-    os.system(f'fasterq-dump {sample_id}')
+    # os.system('sh run_neoantigen_pipeline.sh')
 
-os.system('sh run_neoantigen_pipeline.sh')
+    # assess_performance(WORKDIR)
 
 
 def extract_variant_calls_compare_reference(
@@ -103,14 +131,14 @@ def extract_variant_calls_compare_reference(
 
 
 def build_performance_comparision_dataframe(
-        benchmark_config, WORKDIR, VARIANT_CALLERS=['strelka', 'mutect']):
+        BENCHMARKING_CONFIG, WORKDIR, VARIANT_CALLERS=['strelka', 'mutect']):
     """Build a dataframe with the performance of the different pipelines"""
     performance_df = pd.DataFrame()
     reference_vcf = os.path.join(
-        WORKDIR, benchmark_config['reference_variant_calls'],
+        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
         'high-confidence_sSNV_in_HC_regions_v1.2.vcf.gz')
 
-    for pipeline, description in benchmark_config['neoantigen_discovery_pipelines'].items():
+    for pipeline, description in BENCHMARKING_CONFIG['neoantigen_discovery_pipelines'].items():
         for variant_caller in VARIANT_CALLERS:
             tested_vcf = os.path.join(
                 WORKDIR, description['workdir'], 'output',
@@ -133,6 +161,7 @@ def build_performance_comparision_dataframe(
 
 
 def plot_windowed_variant_density(pos, window_size, filename=None, title=None):
+    """Create a plot of variant density given base pair window size."""
     # setup windows
     bins = np.arange(0, pos.max(), window_size)
     # use window midpoints as x coordinate
@@ -155,6 +184,7 @@ def plot_windowed_variant_density(pos, window_size, filename=None, title=None):
 
 def create_density_plot_for_all_chromosomes(
         vcf, output_dir, filename):
+    """Create density plot for all chromosomes present in the vcf file."""
     for key in vcf.keys():
         if key.endswith('/variants/POS'):
             pos = allel.SortedIndex(vcf[key])
@@ -167,15 +197,16 @@ def create_density_plot_for_all_chromosomes(
             )
 
 
-def build_variant_density_plots(WORKDIR, benchmark_config, VARIANT_CALLERS):
-    output_dir = benchmark_config['final_output_dir']
+def build_variant_density_plots(WORKDIR, BENCHMARKING_CONFIG, VARIANT_CALLERS):
+    """Build variant density plots for all pipeline version and reference truth data."""
+    output_dir = BENCHMARKING_CONFIG['final_output_dir']
     reference_vcf = os.path.join(
-        WORKDIR, benchmark_config['reference_variant_calls'],
+        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
         'high-confidence_sSNV_in_HC_regions_v1.2.vcf.gz')
     reference_vcf = allel.vcf_to_dataframe(reference_vcf)
     create_density_plot_for_all_chromosomes(
         reference_vcf, output_dir, 'reference.jpg')
-    for pipeline, description in benchmark_config['neoantigen_discovery_pipelines'].items():
+    for pipeline, description in BENCHMARKING_CONFIG['neoantigen_discovery_pipelines'].items():
         for variant_caller in VARIANT_CALLERS:
             tested_vcf = os.path.join(
                 WORKDIR, description['workdir'], 'output',
@@ -185,10 +216,34 @@ def build_variant_density_plots(WORKDIR, benchmark_config, VARIANT_CALLERS):
             create_density_plot_for_all_chromosomes(
                 tested_vcf, output_dir, f'{pipeline}_{variant_caller}.jpg')
 
+def assess_performance(WORKDIR):
+    """Assess performance of the pipeline versions
+    """
+    
+    performance_df = build_performance_comparision_dataframe(
+        BENCHMARKING_CONFIG, WORKDIR)
+    performance_df.to_excel(
+        os.path.join(
+            WORKDIR, BENCHMARKING_CONFIG['final_output_dir'],
+            'performance.xlsx'
+        )
+    )
 
-performance_df = build_performance_comparision_dataframe(
-    benchmark_config, WORKDIR)
-performance_df.to_excel(
-    os.path.join(
-        WORKDIR, benchmark_config['final_output_dir'], 'performance.xlsx')
-)
+def main():
+    logging.basicConfig(
+        filename='benchmarking.log', encoding='utf-8', level=logging.DEBUG,
+        format='%(asctime)s:%(levelname)s - %(message)s'
+    )
+    logging.debug('Start Benchmarking debug')
+    parser = argparse.ArgumentParser(
+                    prog='Benchmak',
+                    description='Benchmark different version of openvax neoantigen discovery pipeline'
+                )
+    parser.add_argument('-d', '--download', action='store_true')
+    args = parser.parse_args()
+    run(args)
+
+
+if __name__ == '__main__':
+    main()
+

@@ -1,5 +1,6 @@
 scikit-learn
 scikit-allel
 numpy
+wget
 pandas
 seaborn
