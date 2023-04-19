@@ -13,13 +13,13 @@ input:
   normal:
     - fragment_id: L001
       type: paired-end
-      r1: /inputs/SRR7890847_1.fastq
-      r2: /inputs/SRR7890847_2.fastq
+      r1: /inputs/SRR7890847_1.fastq.gz
+      r2: /inputs/SRR7890847_2.fastq.gz
   tumor:
     - fragment_id: L001
       type: paired-end
-      r1: /inputs/SRR7890852_1.fastq
-      r2: /inputs/SRR7890852_2.fastq
+      r1: /inputs/SRR7890852_1.fastq.gz
+      r2: /inputs/SRR7890852_2.fastq.gz
 # In most cases, you should not need to modify anything below this line.
 workdir:
   /outputs
