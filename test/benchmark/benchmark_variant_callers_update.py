@@ -71,7 +71,6 @@ def run(args):
                 logging.debug('Download %s to %s' % (file_url, destination))
                 filename = wget.download(file_url, out=destination)
         
-        
         basename = os.path.basename(SRA_TOOL_KIT_URL)
         destination = os.path.join(WORKDIR, basename)
         if os.path.exists(destination):
@@ -99,10 +98,29 @@ def run(args):
                 os.system(
                     f'gzip {sample_id}')
 
+    reference_vcf = create_reference_vcf_file(WORKDIR, BENCHMARKING_CONFIG)
+
     # os.system('sh run_neoantigen_pipeline.sh')
 
-    # assess_performance(WORKDIR)
+    assess_performance(WORKDIR, reference_vcf)
+    build_variant_density_plots(
+        WORKDIR, BENCHMARKING_CONFIG, reference_vcf)
 
+
+def create_reference_vcf_file(WORKDIR, BENCHMARKING_CONFIG):
+    snvs = os.path.join(
+        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
+        'high-confidence_sSNV_in_HC_regions_v1.2.1.vcf.gz'
+    )
+    indels = os.path.join(
+        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
+        'high-confidence_sINDEL_in_HC_regions_v1.2.1.vcf.gz'
+    )
+
+    reference_vcf_file = os.path.join(WORKDIR, "reference.vcf")
+    os.system(
+        f"bcftools concat --allow-overlaps {snvs} {indels} > {reference_vcf_file}")
+    return reference_vcf_file
 
 def extract_variant_calls_compare_reference(
         tested_vcf, reference_vcf):
@@ -131,12 +149,9 @@ def extract_variant_calls_compare_reference(
 
 
 def build_performance_comparision_dataframe(
-        BENCHMARKING_CONFIG, WORKDIR, VARIANT_CALLERS=['strelka', 'mutect']):
+        BENCHMARKING_CONFIG, WORKDIR, reference_vcf_file, VARIANT_CALLERS=['strelka', 'mutect']):
     """Build a dataframe with the performance of the different pipelines"""
     performance_df = pd.DataFrame()
-    reference_vcf = os.path.join(
-        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
-        'high-confidence_sSNV_in_HC_regions_v1.2.vcf.gz')
 
     for pipeline, description in BENCHMARKING_CONFIG['neoantigen_discovery_pipelines'].items():
         for variant_caller in VARIANT_CALLERS:
@@ -146,7 +161,7 @@ def build_performance_comparision_dataframe(
             )
 
             y_pred, y_true = extract_variant_calls_compare_reference(
-                tested_vcf, reference_vcf)
+                tested_vcf, reference_vcf_file)
             target_names = ['not called', 'called']
             results_dict = classification_report(
                 y_true, y_pred, target_names=target_names, dict=True)
@@ -197,12 +212,12 @@ def create_density_plot_for_all_chromosomes(
             )
 
 
-def build_variant_density_plots(WORKDIR, BENCHMARKING_CONFIG, VARIANT_CALLERS):
+def build_variant_density_plots(
+        WORKDIR, BENCHMARKING_CONFIG, reference_vcf,
+        VARIANT_CALLERS=['strelka', 'mutect']
+        ):
     """Build variant density plots for all pipeline version and reference truth data."""
     output_dir = BENCHMARKING_CONFIG['final_output_dir']
-    reference_vcf = os.path.join(
-        WORKDIR, BENCHMARKING_CONFIG['reference_variant_calls'],
-        'high-confidence_sSNV_in_HC_regions_v1.2.vcf.gz')
     reference_vcf = allel.vcf_to_dataframe(reference_vcf)
     create_density_plot_for_all_chromosomes(
         reference_vcf, output_dir, 'reference.jpg')
@@ -219,7 +234,6 @@ def build_variant_density_plots(WORKDIR, BENCHMARKING_CONFIG, VARIANT_CALLERS):
 def assess_performance(WORKDIR):
     """Assess performance of the pipeline versions
     """
-    
     performance_df = build_performance_comparision_dataframe(
         BENCHMARKING_CONFIG, WORKDIR)
     performance_df.to_excel(
