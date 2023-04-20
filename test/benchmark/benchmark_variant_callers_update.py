@@ -19,6 +19,7 @@ BENCHMARKING_CONFIG = {
     'sample_info': {
         'input': {
             'genome_reference': 'hg38',
+            'patient_id': 'HCC_1395',
             'samples': [
                 {'ID': 'SRR7890852', 'name': 'WES_NV_T_1', 'origin': 'tumor'},
                 {'ID': 'SRR7890847', 'name': 'WES_NV_N_1', 'origin': 'normal'},
@@ -98,10 +99,11 @@ def run(args):
                 os.system(
                     f'gzip {sample_id}')
 
-    reference_vcf = create_reference_vcf_file(WORKDIR, BENCHMARKING_CONFIG)
+    # reference_vcf = create_reference_vcf_file(WORKDIR, BENCHMARKING_CONFIG)
 
     # os.system('sh run_neoantigen_pipeline.sh')
 
+    reference_vcf = os.path.join(WORKDIR, "reference.vcf")
     assess_performance(WORKDIR, reference_vcf)
     build_variant_density_plots(
         WORKDIR, BENCHMARKING_CONFIG, reference_vcf)
@@ -230,6 +232,7 @@ def build_variant_density_plots(
             tested_vcf = allel.vcf_to_dataframe(tested_vcf)
             create_density_plot_for_all_chromosomes(
                 tested_vcf, output_dir, f'{pipeline}_{variant_caller}.jpg')
+
 
 def assess_performance(WORKDIR):
     """Assess performance of the pipeline versions
