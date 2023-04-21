@@ -20,9 +20,6 @@ def run(args):
     assess_performance(
         args.output_dir, args.reference, args.predictions,
         args.predictions_tag)
-    build_variant_density_plots(
-        args.output_dir, args.reference, args.predictions,
-        args.predictions_tag)
 
 
 def extract_variant_calls_compare_reference(
@@ -30,7 +27,7 @@ def extract_variant_calls_compare_reference(
     """Extract variant calls coordinates from vcf files and compare results.
     Returns the results of the comparison. 0 if the variant was not called, 1 if"""
     tested_vcf_df = allel.vcf_to_dataframe(tested_vcf)
-    tested_vcf_df=tested_vcf_df[tested_vcf_df['FILTER_PASS'] == True]
+    #tested_vcf_df=tested_vcf_df[tested_vcf_df['FILTER_PASS'] == True]
     reference_vcf_df = allel.vcf_to_dataframe(reference_vcf)
     tested_vcf_df['CHROM'] = tested_vcf_df['CHROM'].astype(str)
     reference_vcf_df['CHROM'] = reference_vcf_df['CHROM'].astype(str)
@@ -79,11 +76,13 @@ def compare(merged_vcf_df):
                 variant_calls_true.append(1)
             else:
                 variant_calls_true.append(0)
+            if type(variant['FILTER_PASS_tested']) != bool and type(variant['FILTER_PASS_reference']) != bool:
+                print(variant)
             progress_bar.update(1)
     return variant_calls_pred, variant_calls_true
 
 
-def build_performance_comparision_dataframe(
+def build_performance_comparison_dataframe(
        reference, predictions, predictions_tag):
     """Build a dataframe with the performance of the different pipelines"""
     performance_list = []
@@ -116,68 +115,19 @@ def build_performance_comparision_dataframe(
         performance_list.append(pd.DataFrame(results_dict))
     return pd.concat(performance_list), pd.concat(confusion_matrix_list)
 
-
-def plot_windowed_variant_density(pos, window_size, filename=None, title=None):
-    """Create a plot of variant density given base pair window size."""
-    # setup windows
-    bins = np.arange(0, pos.max(), window_size)
-    # use window midpoints as x coordinate
-    x = (bins[1:] + bins[:-1])/2
-    # compute variant density in each window
-    h, _ = np.histogram(pos, bins=bins)
-    y = h / window_size
-
-    # plot
-    fig, ax = plt.subplots(figsize=(12, 3))
-    sns.despine(ax=ax, offset=10)
-    ax.plot(x, y)
-    ax.set_xlabel('Chromosome position (bp)')
-    ax.set_ylabel('Variant density (bp$^{-1}$)')
-    if title:
-        ax.set_title(title)
-    if filename:
-        plt.savefig(filename)
-
-
-def create_density_plot_for_all_chromosomes(
-        vcf, output_dir, filename):
-    """Create density plots for all chromosomes present in the vcf file."""
-    for key in vcf.keys():
-        if key.endswith('/variants/POS'):
-            pos = allel.SortedIndex(vcf[key])
-            plot_windowed_variant_density(
-                pos, window_size=100000,
-                filename=os.path.join(
-                    output_dir, f'{key}-{filename}'
-                ),
-                title='Variant density'
-            )
-
-
-def build_variant_density_plots(output_dir, reference_vcf, predictions, tag
-        ):
-    """Build variant density plots for all pipeline version and reference truth data."""
-    reference_vcf = allel.vcf_to_dataframe(reference_vcf)
-    create_density_plot_for_all_chromosomes(
-        reference_vcf, output_dir, 'reference.jpg')
-    for prediction in predictions:
-        variant_caller = os.path.basename(prediction)
-        prediction_df = allel.vcf_to_dataframe(prediction)
-        create_density_plot_for_all_chromosomes(
-            prediction_df, output_dir, f'{tag}_{variant_caller}.jpg')
-
-
 def assess_performance(output_dir, reference, predictions, predictions_tag):
     """Assess performance of the pipeline versions
     """
-    performance_df, confusion_mat_df = build_performance_comparision_dataframe(
+    performance_df, confusion_mat_df = build_performance_comparison_dataframe(
         reference, predictions, predictions_tag)
     date_time = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     performance_df.to_excel(
-        os.path.join(output_dir, f'performance_{date_time}.xlsx')
+        os.path.join(
+            output_dir, f'performance-{predictions_tag}-{date_time}.xlsx')
     )
     confusion_mat_df.to_excel(
-        os.path.join(output_dir, f'confusion_matrix_{date_time}.xlsx'),
+        os.path.join(
+            output_dir, f'confusion_matrix-{predictions_tag}-{date_time}.xlsx'),
         index=False
     )
 
