@@ -13,109 +13,179 @@
 # limitations under the License.
 
 from os.path import join
+import re
+import tempfile
+import shutil
 
-def _get_cosmic_str():
-  cosmic = config["reference"].get("cosmic", None)
-  return "--cosmic " + cosmic if cosmic else ""
+
+def _add_line_to_vcf_header(vcf_path:str, vcf_out_path:str, add_ref_line:str):
+  reference_bool = False
+  with open(vcf_path, 'r') as file1, open(vcf_out_path, 'w') as file2:
+    for line in file1:
+      if re.match('^##reference', line):
+        reference_bool = True
+      if re.match('^#CHROM', line) and not reference_bool:
+        file2.write(add_ref_line)
+      file2.write(line)
 
 # run a separate mutect task for each chromosome
-#
-# If not running in a Docker image, user must have these environment variables set:
-# - JAVA7_BIN: directory of Java 1.7 installation, must contain java executable
-# - MUTECT: path to MuTect executable
-# TODO(julia): this should go in the config instead of being set by env variables
-rule mutect_per_chr:
-  input:
-    normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
-    tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
-  output:
-    temp(join(WORKDIR, "mutect_{chr}.vcf.idx")),
-    temp(join(WORKDIR, "mutect_{chr}.vcf.out")),
-    temp(join(WORKDIR, "mutect_{chr}.vcf.coverage.wig")),
-    vcf = temp(join(WORKDIR, "mutect_{chr}.vcf"))
-  params:
-    reference = config["reference"]["genome"],
-    dbsnp = config["reference"]["dbsnp"]
-  benchmark:
-    join(BENCHMARKDIR, "mutect_{chr}.txt")
-  log:
-    join(LOGDIR, "mutect_{chr}.log")
-  resources:
-    mem_mb = 2000
-  run:
-    shell("""
-        $JAVA7_BIN/java -Xmx2g -jar $MUTECT \
-        --analysis_type MuTect \
-        --reference_sequence {params.reference} \
-        %s \
-        --dbsnp {params.dbsnp} \
-        --intervals {wildcards.chr} \
-        --input_file:normal {input.normal} \
-        --input_file:tumor {input.tumor} \
-        --vcf {output.vcf} \
-        --out {output.vcf}.out \
-        --coverage_file {output.vcf}.coverage.wig \
-        2> {log}
-        """ % _get_cosmic_str())
-
-rule mutect:
-  input:
-    expand(join(WORKDIR, "mutect_{chr}.vcf"), chr=config["contigs"])
-  output:
-    join(WORKDIR, "mutect.vcf")
-  shell:
-    "vcf-concat {input} > {output}"
-
 rule mutect2_per_chr:
   input:
     normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
     tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
   output:
-    temp(join(WORKDIR, "mutect2_{chr}.vcf"))
+    temp(join(WORKDIR, "mutect2_{chr}.vcf.idx")),
+    stats = join(WORKDIR, "mutect2_{chr}.vcf.stats"),
+    f1r2 = join(WORKDIR, "f1r2-{chr}.tar.gz"),
+    vcf = join(WORKDIR, "mutect2_{chr}.vcf")
   params:
     reference = config["reference"]["genome"],
-    dbsnp = config["reference"]["dbsnp"]
+    gnomad = config["reference"]["gnomad"],
+    pon = config["reference"]["pon"]
   benchmark:
     join(BENCHMARKDIR, "mutect2_{chr}.txt")
   log:
     join(LOGDIR, "mutect2_{chr}.log")
+  resources:
+    mem_mb = 2000
+  run:
+    mitochondria = ''
+    if wildcards.chr in ['Mt', 'mt', 'chrM']:
+      mitochondria = '--mitochondria-mode'
+    shell("""
+      $GATK_BIN/gatk --java-options -Xmx2g Mutect2 \
+      -I:normal {input.normal} \
+      -I:tumor {input.tumor} \
+      -R {params.reference} \
+      -pon {params.pon} \
+      %s \
+      --germline-resource {params.gnomad} \
+      --af-of-alleles-not-in-resource 0.0000025 \
+      --f1r2-tar-gz {output.f1r2} \
+      -L {wildcards.chr} \
+      -O {output.vcf} \
+      2> {log}
+      """ % mitochondria)
+
+rule merge_mutect2_stats:
+  input:
+    expand(join(WORKDIR, "mutect2_{chr}.vcf.stats"), chr=config["contigs"])
+  output:
+    join(WORKDIR, "mutect2-unfiltered-ref.vcf.stats")
+  run:
+    stat_files = ' '.join(['-stats %s' % x for x in input])
+    shell("""
+      $GATK_BIN/gatk MergeMutectStats \
+      %s \
+      -O {output}
+      """ % stat_files)
+
+rule mutect2_concat:
+  input:
+    stats = join(WORKDIR,'mutect2-unfiltered-ref.vcf.stats'),
+    vcfs = expand(join(WORKDIR, "mutect2_{chr}.vcf"), chr=config["contigs"])
+  output:
+    join(WORKDIR, "mutect2-unfiltered.vcf")
+  run:
+    shell("""vcf-concat {input.vcfs} > {output}""")
+
+rule copy_and_add_reference:
+  input:
+    join(WORKDIR, "mutect2-unfiltered.vcf"),
+  params:
+    config["reference"]["genome"]
+  output:
+    join(WORKDIR, "mutect2-unfiltered-ref.vcf"),
+  run:
+    reference_path = join(WORKDIR, str(params))
+    _add_line_to_vcf_header(str(input), str(output), f'##reference={reference_path}\n')
+
+rule learn_read_orientation_model:
+  input:
+    expand(join(WORKDIR, "f1r2-{chr}.tar.gz"), chr=config["contigs"]),
+  output:
+    join(WORKDIR, "read-orientation-model.tar.gz"),
+  run:
+    all_f1_r2_input = ' '.join(['-I %s' % x for x in input])
+    shell("""
+        $GATK_BIN/gatk LearnReadOrientationModel \
+        %s \
+        -O {output}""" % all_f1_r2_input)
+
+rule get_pileup_summaries:
+  input:
+    tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
+  output:
+    join(WORKDIR, "getpileupsummaries.table")
+  params:
+    biallelic = config["reference"]["gnomad-bi"]
+  log:
+    join(LOGDIR, "getpileupsummaries.log")
+  run:
+    chrs = ' '.join(['-L %s' % x for x in config['contigs']])
+    shell("""
+        $GATK_BIN/gatk GetPileupSummaries \
+        -I {input.tumor} \
+        -V {params.biallelic} \
+        %s \
+        -O {output}""" % chrs)
+
+rule calculate_contamination:
+  input:
+    pileup = join(WORKDIR, "getpileupsummaries.table")
+  output:
+    calc = join(WORKDIR, "calculatecontamination.table"),
+    seg = join(WORKDIR, "segments.table")
   run:
     shell("""
-        gatk -T MuTect2 \
-        -I:normal {input.normal} \
-        -I:tumor {input.tumor} \
-        -R {params.reference} \
-        --dbsnp {params.dbsnp} \
-        %s \
-        --intervals {wildcards.chr} \
-        -o {output} \
-        2> {log}
-        """ % _get_cosmic_str())
+      $GATK_BIN/gatk CalculateContamination \
+      -I {input.pileup} \
+      -tumor-segmentation {output.seg} \
+      -O {output.calc}""")
 
-rule mutect2:
+rule filter_1_mutect2:
   input:
-    expand(join(WORKDIR, "mutect2_{chr}.vcf"), chr=config["contigs"])
+    vcf = join(WORKDIR, "mutect2-unfiltered-ref.vcf"),
+    stats = join(WORKDIR, "mutect2-unfiltered-ref.vcf.stats"),
+    seg = join(WORKDIR, "segments.table"),
+    cont = join(WORKDIR, "calculatecontamination.table"),
+    ob_prior = join(WORKDIR, 'read-orientation-model.tar.gz')
   output:
-    join(WORKDIR, "mutect2.vcf")
-  shell:
-    "vcf-concat {input} > {output}"
+    vcf = join(WORKDIR, "mutect.vcf"),
+  params:
+    reference = config["reference"]["genome"]
+  benchmark:
+    join(BENCHMARKDIR, "mutect2_filter.txt")
+  log:
+    join(LOGDIR, "mutect2_filter.log")
+  run:
+    tempfile = input.vcf + '.stats'
+    shutil.move(input.stats, tempfile)
+    shell("""
+      $GATK_BIN/gatk FilterMutectCalls \
+      -R {params.reference} \
+      -V {input.vcf} \
+      --contamination-table {input.cont} \
+      --tumor-segmentation {input.seg} \
+      --ob-priors {input.ob_prior} \
+      -O {output.vcf}""")
 
 rule manta:
   input:
     normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
     tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
   params:
-    reference = config["reference"]["genome"]
-    output_dir = join(WORKDIR, "manta_output"),
+    reference = config["reference"]["genome"],
+    output_dir = MANTA_OUTPUT_DIR
   output:
-    diploid_sv_vcf = join(params.output_dir, "results/variants/diploidSV.vcf.gz"),
-    diploid_sv_idx = join(params.output_dir, "results/variants/diploidSV.vcf.gz.tbi"),
-    somatic_sv_vcf = join(params.output_dir, "results/variants/somaticSV.vcf.gz"),
-    somatic_sv_idx = join(params.output_dir, "results/variants/somaticSV.vcf.gz.tbi"),
-    cand_indel_vcf = join(params.output_dir, "results/variants/candidatcandidateSmallIndels.vcf.gz"),
-    cand_indel_idx = join(params.output_dir, "results/variants/candidateSmallIndels.vcf.gz.tbi"),
-    cand_sv_vcf = join(params.output_dir, "results/variants/candidateSV.vcf.gz"),
-    cand_sv_idx = join(params.output_dir, "results/variants/candidateSV.vcf.gz.tbi"),
+    diploid_sv_vcf = join(MANTA_OUTPUT_DIR, "results/variants/diploidSV.vcf.gz"),
+    diploid_sv_idx = join(MANTA_OUTPUT_DIR, "results/variants/diploidSV.vcf.gz.tbi"),
+    somatic_sv_vcf = join(MANTA_OUTPUT_DIR, "results/variants/somaticSV.vcf.gz"),
+    somatic_sv_idx = join(MANTA_OUTPUT_DIR, "results/variants/somaticSV.vcf.gz.tbi"),
+    cand_indel_vcf = join(MANTA_OUTPUT_DIR, "results/variants/candidateSmallIndels.vcf.gz"),
+    cand_indel_idx = join(MANTA_OUTPUT_DIR, "results/variants/candidateSmallIndels.vcf.gz.tbi"),
+    cand_sv_vcf = join(MANTA_OUTPUT_DIR, "results/variants/candidateSV.vcf.gz"),
+    cand_sv_idx = join(MANTA_OUTPUT_DIR, "results/variants/candidateSV.vcf.gz.tbi"),
   log:
     join(LOGDIR, "manta.log"),
   threads: _get_all_cores
@@ -123,13 +193,13 @@ rule manta:
       mem_mb=4096,
   shell:
     "rm -rf {params.output_dir}; "
-    "${MANTA_BIN}/configManta.py "
+    "$MANTA_BIN/configManta.py "
     "--normalBam {input.normal} "
     "--tumorBam {input.tumor} "
     "--referenceFasta {params.reference} "
     "--exome "
     "--runDir {params.output_dir} &> {log}; "
-    "{params.output_dir}/runWorkflow.py --memGb {mem_gb} -j {threads} "
+    "{params.output_dir}/runWorkflow.py --memGb {resources.mem_mb} -j {threads} "
     ">> {log} 2>&1"
 
 MUTATION_TYPES=['snvs', 'indels']
@@ -139,7 +209,7 @@ MUTATION_TYPES=['snvs', 'indels']
 # - STRELKA_CONFIG: path to Strelka config file
 rule strelka2:
   input:
-    indel_candidates = join(WORKDIR, "manta_output/results/variants/candidate_small_indels.vcf.gz"),
+    indel_candidates = join(MANTA_OUTPUT_DIR, "results/variants/candidateSmallIndels.vcf.gz"),
     normal = join(WORKDIR, "normal_aligned_coordinate_sorted_dups_indelreal_bqsr.bam"),
     tumor = join(WORKDIR, "tumor_aligned_coordinate_sorted_dups_indelreal_bqsr.bam")
   output:

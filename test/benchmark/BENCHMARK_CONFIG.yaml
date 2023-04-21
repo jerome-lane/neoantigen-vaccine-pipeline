@@ -29,6 +29,9 @@ reference:
   cosmic: /reference-genome/grch38/CosmicCodingMuts.grch38.vcf
   transcripts: /reference-genome/grch38/gencode.v22.annotation.gtf
   capture_kit_coverage_file: /reference-genome/grch38/S31285117_Covered_grch38.bed
+  gnomad: /reference-genome/grch38/af-only-gnomad.hg38.vcf.gz
+  gnomad-bi: /reference-genome/grch38/af-only-gnomad.hg38.biallelic.vcf.gz
+  pon: /reference-genome/grch38/1000g_pon.hg38.vcf.gz
 parallel_indel_realigner: true
 variant_callers:
   - mutect

@@ -90,6 +90,12 @@ RUN mkdir $HOME/manta && \
 
 ENV MANTA_BIN $HOME/manta/bin
 
+RUN cd /tmp && wget https://github.com/broadinstitute/gatk/releases/download/4.3.0.0/gatk-4.3.0.0.zip && \
+    unzip gatk-4.3.0.0.zip && mv gatk-4.3.0.0 $HOME/gatk && rm -rf /tmp/* && \
+    cd $HOME/gatk && chmod -R a+rx ./*
+
+ENV GATK_BIN $HOME/gatk
+
 # Install Miniconda
 RUN wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O miniconda.sh && \
     bash miniconda.sh -b -p $HOME/miniconda
@@ -138,17 +144,12 @@ RUN $MHCFLURRY_BIN/mhcflurry-downloads fetch
 # Test MHCflurry
 RUN $MHCFLURRY_BIN/mhcflurry-predict --alleles HLA-A0201 --peptides SIINFEKL
 
-
 # most of the tools we're using are in the pgv environment; adding to PATH for convenience
 ENV PATH $PGV_BIN:$PATH
 
 # MuTect needs Java 1.7, while GATK and other things need Java 1.8.
 # Dealing with this by setting up a separate Conda environment, specifically for Java 7
 RUN conda create -n java7 java-jdk==7.0.91 && conda clean --all -y
-
-# Set up MuTect 1.1.7
-RUN wget -O $HOME/mutect-1.1.7.jar http://storage.googleapis.com/common-files/tools/mutect-1.1.7.jar
-ENV MUTECT $HOME/mutect-1.1.7.jar
 
 # Set up GATK 3.7; need to link with gatk-register
 RUN wget -O $HOME/GenomeAnalysisTK.jar http://storage.googleapis.com/common-files/tools/GenomeAnalysisTK.jar

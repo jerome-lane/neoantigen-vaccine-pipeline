@@ -18,6 +18,7 @@ from os.path import join, dirname, splitext
 
 SAMPLE_ID = config["input"]["id"]
 WORKDIR = join(config["workdir"], SAMPLE_ID)
+MANTA_OUTPUT_DIR = join(WORKDIR, 'manta_output')
 LOGDIR = join(WORKDIR, "logs")
 BENCHMARKDIR = join(WORKDIR, "benchmarks")
 GENOMEDIR = dirname(config["reference"]["genome"])
