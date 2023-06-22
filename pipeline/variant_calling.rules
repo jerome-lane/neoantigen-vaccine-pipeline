@@ -168,7 +168,8 @@ rule filter_1_mutect2:
       --contamination-table {input.cont} \
       --tumor-segmentation {input.seg} \
       --ob-priors {input.ob_prior} \
-      -O {output.vcf}""")
+      -O {output.vcf} \
+      >> {log} 2>&1""")
 
 rule manta:
   input:
@@ -229,7 +230,7 @@ rule strelka2:
     "--normalBam {input.normal} "
     "--tumorBam {input.tumor} "
     "--referenceFasta {params.reference} "
-    "--config $STRELKA_CONFIG "
+    # "--config $STRELKA_CONFIG "
     "--indelCandidates {input.indel_candidates} "
     "--exome "
     "--runDir {params.output_dir} &> {log}; "
